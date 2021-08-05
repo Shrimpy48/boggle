@@ -102,9 +102,6 @@ fn build(app: &gtk::Application) {
     let correct_model = gtk::StringList::new(&[]);
     let not_word_model = gtk::StringList::new(&[]);
     let other_model = gtk::StringList::new(&[]);
-        not_word_model,
-        other_model,
-    }
 
     let plain_factory = new_plain_factory();
     let correct_factory = new_correct_factory(
