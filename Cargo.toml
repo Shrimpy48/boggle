@@ -1,0 +1,31 @@
+[package]
+name = "boggle"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+enum-map = "1.1"
+rand = "0.8"
+gio = { version = "0.14", optional = true }
+pangocairo = { version = "0.14", optional = true }
+futures = { version = "0.3", optional = true }
+
+[dependencies.gtk]
+version = "0.2"
+package = "gtk4"
+optional = true
+
+[features]
+gtkui = ["gtk", "gio", "pangocairo", "futures"]
+cli = []
+default = ["gtkui", "cli"]
+
+[[bin]]
+name = "boggle-gui"
+required-features = ["gtkui"]
+
+[[bin]]
+name = "boggle-cli"
+required-features = ["cli"]
