@@ -80,13 +80,10 @@ pub fn read_dict<P: AsRef<Path>>(path: P) -> Result<Dict, Error> {
     for line_res in buf_reader.lines() {
         let line = line_res?;
         if line.len() < 3 {
-            println!("skipping {}", line);
             continue;
         }
         if let Ok(parsed) = line.parse::<BString>() {
             dict.insert(&parsed);
-        } else {
-            println!("skipping {}", line);
         }
     }
     Ok(dict)
