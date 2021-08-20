@@ -3,15 +3,18 @@ pub mod web;
 
 use enum_map::{Enum, EnumMap};
 use rand::prelude::*;
-use std::error::Error;
+use serde::de::{Error, SeqAccess, Visitor};
+use serde::ser::SerializeSeq;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::error;
 use std::fmt;
 use std::iter::FromIterator;
 use std::mem;
 use std::ops::Deref;
-use std::ops::Index;
+use std::ops::{Index, IndexMut};
 use std::str::FromStr;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Enum)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Enum, Serialize, Deserialize)]
 pub enum BChar {
     A,
     B,
@@ -75,7 +78,8 @@ impl fmt::Display for BChar {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct BString(Vec<BChar>);
 
 impl BString {
@@ -89,12 +93,6 @@ impl BString {
 
     pub fn pop(&mut self) -> Option<BChar> {
         self.0.pop()
-    }
-}
-
-impl Default for BString {
-    fn default() -> Self {
-        BString(Vec::default())
     }
 }
 
@@ -142,6 +140,41 @@ impl FromStr for BString {
     }
 }
 
+impl Serialize for BString {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+struct BStringVisitor;
+
+impl<'de> Visitor<'de> for BStringVisitor {
+    type Value = BString;
+
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("a valid boggle string")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: Error,
+    {
+        BString::from_str(v).map_err(|e| Error::custom(e.to_string()))
+    }
+}
+
+impl<'de> Deserialize<'de> for BString {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_str(BStringVisitor)
+    }
+}
+
 #[derive(Debug)]
 pub struct ParseBoggleError;
 
@@ -151,9 +184,10 @@ impl fmt::Display for ParseBoggleError {
     }
 }
 
-impl Error for ParseBoggleError {}
+impl error::Error for ParseBoggleError {}
 
 #[derive(Debug, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct BStr([BChar]);
 
 impl BStr {
@@ -209,6 +243,15 @@ impl fmt::Display for BStr {
     }
 }
 
+impl Serialize for BStr {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
 impl fmt::Display for BString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&**self, f)
@@ -224,12 +267,59 @@ impl Deref for BString {
 }
 
 #[derive(Default, PartialEq, Eq, Clone)]
+#[repr(transparent)]
+struct DictChildren(EnumMap<BChar, Option<Box<Dict>>>);
+
+impl DictChildren {
+    fn values(&self) -> enum_map::Values<Option<Box<Dict>>> {
+        self.0.values()
+    }
+
+    fn values_mut(&mut self) -> enum_map::ValuesMut<Option<Box<Dict>>> {
+        self.0.values_mut()
+    }
+
+    fn iter(&self) -> enum_map::Iter<BChar, Option<Box<Dict>>> {
+        self.0.iter()
+    }
+}
+
+impl Index<BChar> for DictChildren {
+    type Output = <EnumMap<BChar, Option<Box<Dict>>> as Index<BChar>>::Output;
+
+    fn index(&self, index: BChar) -> &Self::Output {
+        self.0.index(index)
+    }
+}
+
+impl IndexMut<BChar> for DictChildren {
+    fn index_mut(&mut self, index: BChar) -> &mut Self::Output {
+        self.0.index_mut(index)
+    }
+}
+
+impl fmt::Debug for DictChildren {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_map()
+            .entries(
+                self.iter()
+                    .filter_map(|(k, ov)| ov.as_ref().map(|v| (k, v))),
+            )
+            .finish()
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct Dict {
     val: bool,
-    children: EnumMap<BChar, Option<Box<Dict>>>,
+    children: DictChildren,
 }
 
 impl Dict {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
     pub fn insert(&mut self, word: &BStr) {
         match word.split_first() {
             None => {
@@ -276,22 +366,57 @@ impl Dict {
 
     pub fn words(&self) -> Vec<BString> {
         let mut out = Vec::new();
-        let mut current_str = BString::default();
-        self.push_words(&mut current_str, &mut out);
+        self.traverse(|w| out.push(w));
         out
     }
 
-    fn push_words(&self, current_str: &mut BString, out: &mut Vec<BString>) {
+    pub fn traverse<F>(&self, mut f: F)
+    where
+        F: FnMut(BString),
+    {
+        let mut current_str = BString::default();
+        self.traverse_impl(&mut current_str, &mut f);
+    }
+
+    fn traverse_impl<F>(&self, current_str: &mut BString, f: &mut F)
+    where
+        F: FnMut(BString),
+    {
         if self.val {
-            out.push(current_str.clone());
+            f(current_str.clone());
         }
         for (ch, v) in self.children.iter() {
             if let Some(d) = v {
                 current_str.push(ch);
-                d.push_words(current_str, out);
+                d.traverse_impl(current_str, f);
                 current_str.pop();
             }
         }
+    }
+
+    pub fn try_traverse<F, E>(&self, mut f: F) -> Result<(), E>
+    where
+        F: FnMut(BString) -> Result<(), E>,
+    {
+        let mut current_str = BString::default();
+        self.try_traverse_impl(&mut current_str, &mut f)
+    }
+
+    fn try_traverse_impl<F, E>(&self, current_str: &mut BString, f: &mut F) -> Result<(), E>
+    where
+        F: FnMut(BString) -> Result<(), E>,
+    {
+        if self.val {
+            f(current_str.clone())?;
+        }
+        for (ch, v) in self.children.iter() {
+            if let Some(d) = v {
+                current_str.push(ch);
+                d.try_traverse_impl(current_str, f)?;
+                current_str.pop();
+            }
+        }
+        Ok(())
     }
 
     fn prune(&mut self) {
@@ -386,9 +511,51 @@ impl Extend<BString> for Dict {
     }
 }
 
+impl Serialize for Dict {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(None)?;
+        self.try_traverse(|s| seq.serialize_element(&s))?;
+        seq.end()
+    }
+}
+
+struct DictVisitor;
+
+impl<'de> Visitor<'de> for DictVisitor {
+    type Value = Dict;
+
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("a word list")
+    }
+
+    fn visit_seq<S>(self, mut access: S) -> Result<Self::Value, S::Error>
+    where
+        S: SeqAccess<'de>,
+    {
+        let mut dict = Dict::new();
+        while let Some(value) = access.next_element::<BString>()? {
+            dict.insert(&value);
+        }
+        Ok(dict)
+    }
+}
+
+impl<'de> Deserialize<'de> for Dict {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(DictVisitor)
+    }
+}
+
 pub type Dice = [[BChar; 6]; 16];
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[repr(transparent)]
 pub struct Board([[BChar; 4]; 4]);
 
 impl Board {
@@ -450,7 +617,7 @@ impl Board {
                         r,
                         c,
                         &mut visited,
-                        &d,
+                        d,
                         out.children[char_at_pos].get_or_insert_with(Default::default),
                     );
                 }
@@ -482,7 +649,7 @@ impl Board {
                     r,
                     c,
                     visited,
-                    &d,
+                    d,
                     out.children[char_at_pos].get_or_insert_with(Default::default),
                 );
             }
