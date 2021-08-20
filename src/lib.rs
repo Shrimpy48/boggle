@@ -1,11 +1,10 @@
 pub mod file;
 pub mod web;
+#[cfg(feature = "serde")]
+mod serde;
 
 use enum_map::{Enum, EnumMap};
 use rand::prelude::*;
-use serde::de::{Error, SeqAccess, Visitor};
-use serde::ser::SerializeSeq;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::error;
 use std::fmt;
 use std::iter::FromIterator;
@@ -13,8 +12,11 @@ use std::mem;
 use std::ops::Deref;
 use std::ops::{Index, IndexMut};
 use std::str::FromStr;
+#[cfg(feature = "serde")]
+use ::serde::{Serialize, Deserialize};
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Enum, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Enum)]
 pub enum BChar {
     A,
     B,
@@ -140,41 +142,6 @@ impl FromStr for BString {
     }
 }
 
-impl Serialize for BString {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&self.to_string())
-    }
-}
-
-struct BStringVisitor;
-
-impl<'de> Visitor<'de> for BStringVisitor {
-    type Value = BString;
-
-    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("a valid boggle string")
-    }
-
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-    where
-        E: Error,
-    {
-        BString::from_str(v).map_err(|e| Error::custom(e.to_string()))
-    }
-}
-
-impl<'de> Deserialize<'de> for BString {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_str(BStringVisitor)
-    }
-}
-
 #[derive(Debug)]
 pub struct ParseBoggleError;
 
@@ -198,7 +165,7 @@ impl BStr {
     }
 
     pub fn from_slice(v: &[BChar]) -> &BStr {
-        // SAFETY: BStr is a "newtype" of [BChar]
+        // SAFETY: BStr is a "newtype" of [BChar] with repr(transparent)
         unsafe { mem::transmute(v) }
     }
 }
@@ -240,15 +207,6 @@ impl fmt::Display for BStr {
                 .collect::<Vec<&str>>()
                 .concat(),
         )
-    }
-}
-
-impl Serialize for BStr {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&self.to_string())
     }
 }
 
@@ -511,50 +469,10 @@ impl Extend<BString> for Dict {
     }
 }
 
-impl Serialize for Dict {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut seq = serializer.serialize_seq(None)?;
-        self.try_traverse(|s| seq.serialize_element(&s))?;
-        seq.end()
-    }
-}
-
-struct DictVisitor;
-
-impl<'de> Visitor<'de> for DictVisitor {
-    type Value = Dict;
-
-    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("a word list")
-    }
-
-    fn visit_seq<S>(self, mut access: S) -> Result<Self::Value, S::Error>
-    where
-        S: SeqAccess<'de>,
-    {
-        let mut dict = Dict::new();
-        while let Some(value) = access.next_element::<BString>()? {
-            dict.insert(&value);
-        }
-        Ok(dict)
-    }
-}
-
-impl<'de> Deserialize<'de> for Dict {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_seq(DictVisitor)
-    }
-}
-
 pub type Dice = [[BChar; 6]; 16];
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone)]
 #[repr(transparent)]
 pub struct Board([[BChar; 4]; 4]);
 
