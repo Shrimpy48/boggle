@@ -1,3 +1,6 @@
+#[cfg(feature = "gio1")]
+pub mod gio;
+
 use crate::*;
 use std::convert::TryFrom;
 use std::error;
@@ -92,8 +95,8 @@ pub fn read_dict<P: AsRef<Path>>(path: P) -> Result<Dict, Error> {
 pub fn write_dict<P: AsRef<Path>>(path: P, dict: &Dict) -> Result<(), Error> {
     let f = File::create(path)?;
     let mut buf_writer = io::BufWriter::new(f);
-    for word in dict.words() {
-        writeln!(buf_writer, "{}", word)?;
-    }
+    dict.try_traverse(|w| {
+        writeln!(buf_writer, "{}", w)
+    })?;
     buf_writer.flush().map_err(|e| e.into())
 }

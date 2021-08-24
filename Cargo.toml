@@ -10,21 +10,12 @@ enum-map = "1.1"
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"], optional = true }
 gio = { version = "0.14", optional = true }
-pangocairo = { version = "0.14", optional = true }
+glib = { version = "0.14", optional = true }
 futures = { version = "0.3", optional = true }
 
-[dependencies.gtk]
-version = "0.2"
-package = "gtk4"
-optional = true
-
 [features]
-gtkui = ["gtk", "gio", "pangocairo", "futures"]
+gio1 = ["glib", "gio", "futures"]
 cli = []
-
-[[bin]]
-name = "boggle-gui"
-required-features = ["gtkui"]
 
 [[bin]]
 name = "boggle-cli"

@@ -2,7 +2,6 @@ use crate::*;
 use futures::io::{AsyncBufReadExt, AsyncWriteExt};
 use futures::{StreamExt, TryStreamExt};
 use gio::prelude::*;
-use gtk::glib;
 use std::convert::TryFrom;
 use std::error;
 use std::fmt;
