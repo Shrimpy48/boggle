@@ -13,6 +13,9 @@ gio = { version = "0.14", optional = true }
 glib = { version = "0.14", optional = true }
 futures = { version = "0.3", optional = true }
 
+[dev-dependencies]
+rand_pcg  = "0.3"
+
 [features]
 gio1 = ["glib", "gio", "futures"]
 cli = []

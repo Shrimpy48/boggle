@@ -1,6 +1,8 @@
 pub mod io;
 #[cfg(feature = "serde")]
 mod serde;
+#[cfg(test)]
+mod tests;
 
 use enum_map::{Enum, EnumMap};
 use rand::prelude::*;
@@ -8,6 +10,7 @@ use std::error;
 use std::fmt;
 use std::iter::FromIterator;
 use std::mem;
+use std::hash;
 use std::ops::Deref;
 use std::ops::{Index, IndexMut};
 use std::str::FromStr;
@@ -15,7 +18,7 @@ use std::str::FromStr;
 use ::serde::{Serialize, Deserialize};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Enum)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Enum, Hash)]
 pub enum BChar {
     A,
     B,
@@ -45,6 +48,12 @@ pub enum BChar {
     Z,
 }
 use BChar::*;
+
+impl Default for BChar {
+    fn default() -> Self {
+        A
+    }
+}
 
 impl fmt::Display for BChar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -141,6 +150,13 @@ impl FromStr for BString {
     }
 }
 
+impl hash::Hash for BString {
+    #[inline]
+    fn hash<H: hash::Hasher>(&self, hasher: &mut H) {
+        (**self).hash(hasher)
+    }
+}
+
 #[derive(Debug)]
 pub struct ParseBoggleError;
 
@@ -152,7 +168,7 @@ impl fmt::Display for ParseBoggleError {
 
 impl error::Error for ParseBoggleError {}
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct BStr([BChar]);
 
@@ -471,7 +487,7 @@ impl Extend<BString> for Dict {
 pub type Dice = [[BChar; 6]; 16];
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, Default)]
 #[repr(transparent)]
 pub struct Board([[BChar; 4]; 4]);
 
@@ -573,6 +589,12 @@ impl Board {
         }
         visited[row][col] = false;
     }
+
+    pub fn contains(&self, word: &BStr) -> bool {
+        let mut dict = Dict::new();
+        dict.insert(word);
+        return !self.words_trie(&dict).is_empty()
+    }
 }
 
 fn neighbours(p: (usize, usize)) -> impl Iterator<Item = (usize, usize)> {
@@ -616,7 +638,7 @@ impl Index<usize> for Board {
 }
 
 pub fn roll<R: Rng + ?Sized>(dice: &Dice, rng: &mut R) -> Board {
-    let mut board = [[A; 4]; 4];
+    let mut board = <[[BChar; 4]; 4]>::default();
     for (i, die) in dice.choose_multiple(rng, dice.len()).enumerate() {
         board[i / 4][i % 4] = *die.choose(rng).unwrap();
     }
