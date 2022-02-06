@@ -12,6 +12,7 @@ use std::iter::FromIterator;
 use std::mem;
 use std::hash;
 use std::ops::Deref;
+use std::borrow::Borrow;
 use std::ops::{Index, IndexMut};
 use std::str::FromStr;
 #[cfg(feature = "serde")]
@@ -239,6 +240,20 @@ impl Deref for BString {
     }
 }
 
+impl Borrow<BStr> for BString {
+    fn borrow(&self) -> &BStr {
+        BStr::from_slice(&self.0)
+    }
+}
+
+impl ToOwned for BStr {
+    type Owned = BString;
+
+    fn to_owned(&self) -> Self::Owned {
+        BString(self.0.to_owned())
+    }
+}
+
 #[derive(Default, PartialEq, Eq, Clone)]
 #[repr(transparent)]
 struct DictChildren(EnumMap<BChar, Option<Box<Dict>>>);
@@ -339,13 +354,13 @@ impl Dict {
 
     pub fn words(&self) -> Vec<BString> {
         let mut out = Vec::new();
-        self.traverse(|w| out.push(w));
+        self.traverse(|w| out.push(w.to_owned()));
         out
     }
 
     pub fn traverse<F>(&self, mut f: F)
     where
-        F: FnMut(BString),
+        F: FnMut(&BStr),
     {
         let mut current_str = BString::default();
         self.traverse_impl(&mut current_str, &mut f);
@@ -353,10 +368,10 @@ impl Dict {
 
     fn traverse_impl<F>(&self, current_str: &mut BString, f: &mut F)
     where
-        F: FnMut(BString),
+        F: FnMut(&BStr),
     {
         if self.val {
-            f(current_str.clone());
+            f(&current_str);
         }
         for (ch, v) in self.children.iter() {
             if let Some(d) = v {
@@ -369,7 +384,7 @@ impl Dict {
 
     pub fn try_traverse<F, E>(&self, mut f: F) -> Result<(), E>
     where
-        F: FnMut(BString) -> Result<(), E>,
+        F: FnMut(&BStr) -> Result<(), E>,
     {
         let mut current_str = BString::default();
         self.try_traverse_impl(&mut current_str, &mut f)
@@ -377,10 +392,10 @@ impl Dict {
 
     fn try_traverse_impl<F, E>(&self, current_str: &mut BString, f: &mut F) -> Result<(), E>
     where
-        F: FnMut(BString) -> Result<(), E>,
+        F: FnMut(&BStr) -> Result<(), E>,
     {
         if self.val {
-            f(current_str.clone())?;
+            f(&current_str)?;
         }
         for (ch, v) in self.children.iter() {
             if let Some(d) = v {
